@@ -1,0 +1,29 @@
+async function loadModel() {
+  const statusBox = document.getElementById('statusBox');
+  try {
+    // Load manifest
+    const res = await fetch('./tfjs_model/weights_manifest.json');
+    const manifest = await res.json();
+
+    // Build a map of weight name → tensor
+    const weightMap = {};
+    for (const layer of manifest) {
+      for (const w of layer.weights) {
+        const binRes = await fetch(`./tfjs_model/${w.filename}`);
+        const buf = await binRes.arrayBuffer();
+        const data = new Float32Array(buf);
+        weightMap[w.name] = tf.tensor(data, w.shape);
+      }
+    }
+
+    // Load model architecture from model.json (still needed)
+    model = await tf.loadLayersModel('./tfjs_model/model.json');
+    statusBox.className = 'status ready';
+    statusBox.innerHTML = '✓ Model loaded &amp; ready';
+    document.getElementById('btnPredict').disabled = false;
+  } catch (e) {
+    statusBox.className = 'status error';
+    statusBox.innerHTML = '⚠ Failed to load model: ' + e.message;
+    console.error(e);
+  }
+}
