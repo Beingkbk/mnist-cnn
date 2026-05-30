@@ -1,25 +1,375 @@
-async function loadModel() {
-  const statusBox = document.getElementById('statusBox');
-  try {
-    model = await tf.loadLayersModel('./tfjs_model/model.json');
-    statusBox.className = 'status ready';
-    statusBox.innerHTML = '✓ Model loaded &amp; ready';
-    document.getElementById('btnPredict').disabled = false;
-  } catch (e) {
-    statusBox.className = 'status error';
-    statusBox.innerHTML = '⚠ Failed to load model: ' + e.message;
-    console.error(e);
-  }
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>MNIST Digit Recognizer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --card: #1a1a26;
+      --border: #2a2a40;
+      --accent: #00ff88;
+      --text: #e8e8f0;
+      --muted: #6b6b8a;
+      --danger: #ff4466;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+    }
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+    header {
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tag {
+      display: inline-block;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      background: rgba(0,255,136,0.08);
+      border: 1px solid rgba(0,255,136,0.2);
+      padding: 4px 12px;
+      border-radius: 2px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 20px;
+    }
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1px;
+    }
+    h1 span { color: var(--accent); }
+    .subtitle {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 1rem;
+      font-family: 'Space Mono', monospace;
+    }
+    .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+    .badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 2px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      padding: 40px 0;
+    }
+    @media (max-width: 640px) { .main { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 24px;
+    }
+    .card-title {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent);
+    }
+    .canvas-wrapper { display: flex; justify-content: center; }
+    #canvas {
+      border: 2px solid var(--border);
+      border-radius: 2px;
+      cursor: crosshair;
+      display: block;
+      touch-action: none;
+      transition: border-color 0.2s;
+    }
+    #canvas:hover { border-color: var(--accent); box-shadow: 0 0 20px rgba(0,255,136,0.1); }
+    .canvas-hint {
+      text-align: center;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 10px;
+    }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+    button {
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 12px;
+      border-radius: 2px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-predict { background: var(--accent); color: #000; }
+    .btn-predict:hover { background: #00ffaa; box-shadow: 0 0 20px rgba(0,255,136,0.4); transform: translateY(-1px); }
+    .btn-clear { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .btn-clear:hover { border-color: var(--danger); color: var(--danger); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; }
+    .result-display {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; min-height: 120px; margin-bottom: 24px;
+    }
+    .digit-big {
+      font-size: 96px; font-weight: 800; line-height: 1;
+      color: var(--accent); text-shadow: 0 0 40px rgba(0,255,136,0.4);
+      font-family: 'Space Mono', monospace; opacity: 0; transition: all 0.3s;
+    }
+    .digit-big.show { opacity: 1; animation: popIn 0.3s cubic-bezier(0.34,1.56,0.64,1); }
+    @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .confidence-label { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .bars-title { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .bar-label { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); width: 14px; text-align: right; flex-shrink: 0; }
+    .bar-track { flex: 1; height: 10px; background: var(--surface); border-radius: 1px; overflow: hidden; }
+    .bar-fill { height: 100%; background: var(--border); border-radius: 1px; width: 0%; transition: width 0.4s cubic-bezier(0.4,0,0.2,1), background 0.3s; }
+    .bar-fill.top { background: var(--accent); box-shadow: 0 0 8px rgba(0,255,136,0.5); }
+    .bar-pct { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); width: 36px; text-align: right; flex-shrink: 0; }
+    .status {
+      font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted);
+      text-align: center; padding: 12px; border: 1px dashed var(--border);
+      border-radius: 2px; margin-bottom: 16px;
+    }
+    .status.loading { color: var(--accent); border-color: rgba(0,255,136,0.3); }
+    .status.error   { color: var(--danger); border-color: rgba(255,68,102,0.3); }
+    .status.ready   { color: var(--accent); border-color: rgba(0,255,136,0.3); }
+    .tech-section {
+      border-top: 1px solid var(--border); padding: 32px 0;
+      display: grid; grid-template-columns: repeat(3,1fr); gap: 16px;
+    }
+    @media (max-width: 640px) { .tech-section { grid-template-columns: 1fr; } }
+    .tech-card { background: var(--surface); border: 1px solid var(--border); border-radius: 2px; padding: 16px; }
+    .tech-card h3 { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+    .tech-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+    footer { border-top: 1px solid var(--border); padding: 24px 0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    footer span { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); }
+    .gh-link {
+      font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent);
+      text-decoration: none; border: 1px solid rgba(0,255,136,0.3); padding: 6px 14px;
+      border-radius: 2px; transition: all 0.15s;
+    }
+    .gh-link:hover { background: rgba(0,255,136,0.08); }
+    .spinner {
+      display: inline-block; width: 12px; height: 12px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="container">
 
-    // Load model architecture from model.json (still needed)
-    model = await tf.loadLayersModel('./tfjs_model/model.json');
-    statusBox.className = 'status ready';
-    statusBox.innerHTML = '✓ Model loaded &amp; ready';
-    document.getElementById('btnPredict').disabled = false;
-  } catch (e) {
-    statusBox.className = 'status error';
-    statusBox.innerHTML = '⚠ Failed to load model: ' + e.message;
-    console.error(e);
+  <header>
+    <div class="tag">ML Project</div>
+    <h1>Digit <span>Recognizer</span></h1>
+    <p class="subtitle">CNN trained on MNIST · runs entirely in your browser via TensorFlow.js</p>
+    <div class="badges">
+      <span class="badge">Python</span>
+      <span class="badge">Keras / TensorFlow</span>
+      <span class="badge">TensorFlow.js</span>
+      <span class="badge">CNN</span>
+      <span class="badge">MNIST Dataset</span>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="card">
+      <div class="card-title">Draw a digit (0–9)</div>
+      <div class="canvas-wrapper">
+        <canvas id="canvas" width="280" height="280"></canvas>
+      </div>
+      <p class="canvas-hint">Draw with mouse or finger</p>
+      <div class="btn-row">
+        <button class="btn-predict" id="btnPredict" onclick="predict()" disabled>Predict</button>
+        <button class="btn-clear" onclick="clearCanvas()">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Model Output</div>
+      <div id="statusBox" class="status loading">
+        <span class="spinner"></span> Loading model weights…
+      </div>
+      <div class="result-display">
+        <div class="digit-big" id="digitBig">—</div>
+        <div class="confidence-label" id="confLabel"></div>
+      </div>
+      <div class="bars-title">Confidence per class</div>
+      <div id="bars"></div>
+    </div>
+  </div>
+
+  <div class="tech-section">
+    <div class="tech-card">
+      <h3>Architecture</h3>
+      <p>2× Conv2D + MaxPooling, Flatten, Dense(128), Dropout(0.5), Dense(10, softmax)</p>
+    </div>
+    <div class="tech-card">
+      <h3>Dataset</h3>
+      <p>MNIST — 60,000 training / 10,000 test images of handwritten digits (28×28 px)</p>
+    </div>
+    <div class="tech-card">
+      <h3>How It Works</h3>
+      <p>Canvas downsampled to 28×28, normalized, then fed to TF.js model running in your browser</p>
+    </div>
+  </div>
+
+  <footer>
+    <span>No data leaves your browser · model runs 100% client-side</span>
+    <a class="gh-link" href="https://github.com/Beingkbk/mnist-cnn" target="_blank">View on GitHub →</a>
+  </footer>
+
+</div>
+
+<script>
+  // Init bars
+  const barsEl = document.getElementById('bars');
+  for (let i = 0; i < 10; i++) {
+    barsEl.innerHTML += `
+      <div class="bar-row">
+        <span class="bar-label">${i}</span>
+        <div class="bar-track"><div class="bar-fill" id="bar${i}"></div></div>
+        <span class="bar-pct" id="pct${i}">—</span>
+      </div>`;
   }
-}
+
+  // Canvas setup
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+
+  function initCanvas() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, 280, 280);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  }
+  initCanvas();
+
+  let drawing = false;
+
+  function getPos(e) {
+    const r = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
+  }
+
+  canvas.addEventListener('mousedown',  e => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mousemove',  e => { if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('mouseup',    () => drawing = false);
+  canvas.addEventListener('mouseleave', () => drawing = false);
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('touchmove',  e => { e.preventDefault(); if (!drawing) return; const p = getPos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+  canvas.addEventListener('touchend',   () => drawing = false);
+
+  function clearCanvas() {
+    initCanvas();
+    document.getElementById('digitBig').className = 'digit-big';
+    document.getElementById('digitBig').textContent = '—';
+    document.getElementById('confLabel').textContent = '';
+    for (let i = 0; i < 10; i++) {
+      document.getElementById('bar' + i).style.width = '0%';
+      document.getElementById('bar' + i).className = 'bar-fill';
+      document.getElementById('pct' + i).textContent = '—';
+    }
+  }
+
+  // Model loading
+  let model = null;
+
+  async function loadModel() {
+    const statusBox = document.getElementById('statusBox');
+    try {
+      model = await tf.loadLayersModel('./tfjs_model/model.json');
+      statusBox.className = 'status ready';
+      statusBox.innerHTML = '✓ Model loaded &amp; ready';
+      document.getElementById('btnPredict').disabled = false;
+    } catch (e) {
+      statusBox.className = 'status error';
+      statusBox.innerHTML = '⚠ Failed to load model: ' + e.message;
+      console.error(e);
+    }
+  }
+
+  loadModel();
+
+  // Prediction
+  async function predict() {
+    if (!model) return;
+    const offscreen = document.createElement('canvas');
+    offscreen.width = offscreen.height = 28;
+    const octx = offscreen.getContext('2d');
+    octx.drawImage(canvas, 0, 0, 28, 28);
+
+    const tensor = tf.tidy(() => {
+      return tf.browser.fromPixels(offscreen, 1)
+        .toFloat().div(255.0).reshape([1, 28, 28, 1]);
+    });
+
+    const preds = await model.predict(tensor).data();
+    tensor.dispose();
+
+    const probs = Array.from(preds);
+    const topDigit = probs.indexOf(Math.max(...probs));
+    const confidence = (probs[topDigit] * 100).toFixed(1);
+
+    const digitEl = document.getElementById('digitBig');
+    digitEl.textContent = topDigit;
+    digitEl.className = 'digit-big show';
+    document.getElementById('confLabel').textContent = confidence + '% confident';
+
+    probs.forEach((p, i) => {
+      const pct = (p * 100).toFixed(1);
+      const bar = document.getElementById('bar' + i);
+      bar.style.width = pct + '%';
+      bar.className = 'bar-fill' + (i === topDigit ? ' top' : '');
+      document.getElementById('pct' + i).textContent = pct + '%';
+    });
+  }
+</script>
+</body>
+</html>
