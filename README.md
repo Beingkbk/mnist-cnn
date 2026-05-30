@@ -1,4 +1,4 @@
-# MNIST Classification Using CNN in PyTorch
+# MNIST Classification Using CNN
 
 This repository provides a PyTorch implementation for classifying handwritten digits from the MNIST dataset using a Convolutional Neural Network (CNN). The code includes steps for dataset loading, model definition, training, and evaluation.
 
